@@ -52,7 +52,7 @@ Built as a standalone `.exe` that runs on any Windows machine with zero setup. D
 
 <div align="center">
 
-![FRIDAY Desktop](apps/desktop/src/assets/hero.png)
+![FRIDAY Desktop](apps/desktop/src/assets/ss-mk1.png)
 
 *FRIDAY Desktop — Engineering Blueprint UI*
 
