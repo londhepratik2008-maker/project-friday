@@ -44,11 +44,15 @@ function chatWithProvider(hostname, path, apiKey, body, extraHeaders) {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
+        if (res.statusCode >= 400) {
+          reject(new Error(`${hostname} returned ${res.statusCode}: ${data.slice(0, 200)}`));
+          return;
+        }
         try {
           const parsed = JSON.parse(data);
           if (parsed.error) reject(new Error(parsed.error.message || "API error"));
           else resolve(parsed.choices[0].message.content);
-        } catch (err) { reject(err); }
+        } catch (err) { reject(new Error(`Invalid JSON from ${hostname}: ${data.slice(0, 100)}`)); }
       });
     });
     req.on("error", reject);
@@ -59,14 +63,36 @@ function chatWithProvider(hostname, path, apiKey, body, extraHeaders) {
 
 async function chatWithFallback(messages) {
   const config = loadConfig();
-  const systemMsg = { role: "system", content: "You are FRIDAY, a helpful personal AI assistant. Be concise and friendly. Reply in short paragraphs." };
+  const systemMsg = { role: "system", content: `You are FRIDAY, an advanced AI personal assistant inspired by the FRIDAY AI from the Marvel Cinematic Universe. You work alongside your user like JARVIS and FRIDAY worked with Tony Stark.
+
+PERSONALITY:
+- Confident, sharp, and slightly witty — like the real FRIDAY
+- Professional but with personality; never robotic or generic
+- Proactive — anticipate what the user needs and offer helpful follow-ups
+- Loyal and dedicated; you genuinely care about helping
+
+CAPABILITIES:
+- Write, debug, review, and explain code in any language with expert-level detail
+- Analyze files, images, and documents thoroughly
+- Break down complex concepts into clear explanations
+- Provide real-world context and practical suggestions
+- Remember the conversation context and build on previous messages
+
+RESPONSE STYLE:
+- Be detailed and thorough when explaining code, files, or complex topics
+- Use markdown formatting: headers, code blocks, bullet points, bold text as needed
+- When analyzing code: explain what it does, how it works, highlight issues, and suggest improvements
+- When answering questions: give comprehensive answers with examples when helpful
+- Match your detail level to the complexity of the question
+- Keep your wit and personality even in technical responses` };
   const body = (model) => JSON.stringify({ model, max_tokens: 1024, messages: [systemMsg, ...messages] });
 
   const orConfig = loadApiConfig()?.openrouter || {};
+  const nvConfig = loadApiConfig()?.nvidia || {};
 
   const providers = [
-    { name: "NVIDIA", hostname: "integrate.api.nvidia.com", path: "/v1/chat/completions", key: config.apiKey, model: config.model, extra: {} },
-    { name: "OpenRouter", hostname: "openrouter.ai", path: "/v1/chat/completions", key: orConfig.key || "", model: orConfig.textModel || "openrouter/free", extra: { "HTTP-Referer": "http://localhost:5173", "X-Title": "FRIDAY AI Assistant" } },
+    { name: "NVIDIA", hostname: "integrate.api.nvidia.com", path: "/v1/chat/completions", key: nvConfig.key || config.apiKey, model: nvConfig.model || config.model, extra: {} },
+    { name: "OpenRouter", hostname: "openrouter.ai", path: "/api/v1/chat/completions", key: orConfig.key || "", model: orConfig.textModel || "openrouter/free", extra: { "HTTP-Referer": "http://localhost:5173", "X-Title": "FRIDAY AI Assistant" } },
   ];
 
   let lastError = "";
