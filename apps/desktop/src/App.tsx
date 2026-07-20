@@ -6,6 +6,7 @@ import SystemMonitor from "./components/monitor/SystemMonitor";
 import SessionsPanel from "./components/sessions/SessionsPanel";
 import Sidebar from "./components/layout/Sidebar";
 import CommandPalette from "./components/common/CommandPalette";
+import DesktopControl from "./components/desktop/DesktopControl";
 import type { DroppedFile } from "./types";
 
 type Session = {
@@ -496,7 +497,7 @@ RESPONSE STYLE:
           </div>
         </div>
 
-        {/* Right Panel: Sessions + System Monitor */}
+        {/* Right Panel: Sessions + System Monitor + Desktop Control */}
         <div
           className="panel flex flex-col rounded overflow-hidden"
           style={{ width: 260, flexShrink: 0 }}
@@ -510,8 +511,22 @@ RESPONSE STYLE:
             />
           </div>
           <div className="divider-h mx-3" />
-          <div className="px-4 py-3" style={{ height: 300, flexShrink: 0 }}>
+          <div className="px-4 py-3" style={{ height: 200, flexShrink: 0 }}>
             <SystemMonitor />
+          </div>
+          <div className="divider-h mx-3" />
+          <div className="px-4 py-3" style={{ height: 300, flexShrink: 0, overflow: "hidden" }}>
+            <DesktopControl
+              onScreenshot={(dataUrl) => {
+                const screenshotFile: DroppedFile = {
+                  name: "screenshot.png",
+                  size: dataUrl.length,
+                  type: "image/png",
+                  content: dataUrl,
+                };
+                handleSend("Analyze this screenshot — describe what you see in detail.", [screenshotFile]);
+              }}
+            />
           </div>
         </div>
       </div>

@@ -1,10 +1,10 @@
 console.log("🚀 main.cjs started");
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, clipboard, desktopCapturer, shell, screen } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const https = require("https");
-const { execSync } = require("child_process");
+const { execSync, exec: execCb } = require("child_process");
 
 let googleCalendar = null;
 try {
@@ -77,6 +77,8 @@ CAPABILITIES:
 - Break down complex concepts into clear explanations
 - Provide real-world context and practical suggestions
 - Remember the conversation context and build on previous messages
+- Help users navigate their desktop: suggest commands, open apps, manage clipboard
+- When users ask about system info, guide them to use the Desktop Control panel or suggest PowerShell commands
 
 RESPONSE STYLE:
 - Be detailed and thorough when explaining code, files, or complex topics
@@ -393,6 +395,189 @@ ipcMain.handle("calendar:getUpcoming", async (_, maxResults) => {
 
 ipcMain.handle("get:apiConfig", async () => {
   return loadApiConfig() || {};
+});
+
+// ═══════════════════════════════════════════
+// PHASE 3: DESKTOP CONTROL
+// ═══════════════════════════════════════════
+
+// --- Clipboard ---
+ipcMain.handle("clipboard:read", async () => {
+  return { text: clipboard.readText(), html: clipboard.readHTML(), image: clipboard.readImage().isEmpty() ? null : "image-present" };
+});
+
+ipcMain.handle("clipboard:write", async (_, text) => {
+  clipboard.writeText(text);
+  return { success: true };
+});
+
+ipcMain.handle("clipboard:readImage", async () => {
+  const img = clipboard.readImage();
+  if (img.isEmpty()) return { data: null };
+  return { data: img.toDataURL() };
+});
+
+// --- Volume ---
+ipcMain.handle("system:getVolume", async () => {
+  try {
+    const output = execSync('powershell -Command "(Get-AudioDevice -PlaybackVolume)"', { encoding: "utf8", timeout: 5000, stdio: "pipe" });
+    const vol = parseInt(output.trim());
+    return { volume: isNaN(vol) ? 0 : vol, muted: false };
+  } catch {
+    try {
+      const output = execSync('powershell -Command "$wsh = New-Object -ComObject WScript.Shell; $wsh.SendKeys([char]173)" 2>$null; (Get-AudioDevice -PlaybackVolume) 2>$null"', { encoding: "utf8", timeout: 5000, stdio: "pipe" });
+      return { volume: parseInt(output.trim()) || 0, muted: false };
+    } catch {
+      return { volume: 0, muted: false };
+    }
+  }
+});
+
+ipcMain.handle("system:setVolume", async (_, level) => {
+  try {
+    execSync(`powershell -Command "Set-AudioDevice -PlaybackVolume ${Math.max(0, Math.min(100, level))}"`, { encoding: "utf8", timeout: 5000, stdio: "pipe" });
+    return { success: true, volume: level };
+  } catch {
+    return { success: false, volume: 0 };
+  }
+});
+
+ipcMain.handle("system:toggleMute", async () => {
+  try {
+    execSync('powershell -Command "Set-AudioDevice -PlaybackMute (-not (Get-AudioDevice -PlaybackMute))"', { encoding: "utf8", timeout: 5000, stdio: "pipe" });
+    return { success: true };
+  } catch {
+    return { success: false };
+  }
+});
+
+// --- Brightness ---
+ipcMain.handle("system:getBrightness", async () => {
+  try {
+    const output = execSync('powershell -Command "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods).WmiGetBrightness()"', { encoding: "utf8", timeout: 5000, stdio: "pipe" });
+    return { brightness: parseInt(output.trim()) || 0, supported: true };
+  } catch {
+    return { brightness: 0, supported: false };
+  }
+});
+
+ipcMain.handle("system:setBrightness", async (_, level) => {
+  try {
+    execSync(`powershell -Command "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, ${Math.max(0, Math.min(100, level))})"`, { encoding: "utf8", timeout: 5000, stdio: "pipe" });
+    return { success: true, brightness: level };
+  } catch {
+    return { success: false };
+  }
+});
+
+// --- App Launcher ---
+ipcMain.handle("desktop:launchApp", async (_, appName) => {
+  try {
+    shell.openPath(appName);
+    return { success: true, app: appName };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("desktop:launchUrl", async (_, url) => {
+  try {
+    shell.openExternal(url);
+    return { success: true, url };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("desktop:openFolder", async (_, folderPath) => {
+  try {
+    shell.openPath(folderPath || os.homedir());
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("desktop:listApps", async () => {
+  const commonApps = [
+    { name: "Notepad", path: "notepad.exe", icon: "📝" },
+    { name: "Calculator", path: "calc.exe", icon: "🔢" },
+    { name: "File Explorer", path: "explorer.exe", icon: "📁" },
+    { name: "Chrome", path: "chrome.exe", icon: "🌐" },
+    { name: "Edge", path: "msedge.exe", icon: "🌐" },
+    { name: "Firefox", path: "firefox.exe", icon: "🦊" },
+    { name: "VS Code", path: "code.exe", icon: "💻" },
+    { name: "Terminal", path: "wt.exe", icon: "⬛" },
+    { name: "PowerShell", path: "powershell.exe", icon: "🔵" },
+    { name: "Task Manager", path: "taskmgr.exe", icon: "📊" },
+    { name: "Settings", path: "ms-settings:", icon: "⚙️" },
+    { name: "Paint", path: "mspaint.exe", icon: "🎨" },
+    { name: "WordPad", path: "wordpad.exe", icon: "📝" },
+    { name: "Snipping Tool", path: "SnippingTool.exe", icon: "✂️" },
+  ];
+
+  const found = [];
+  const pathDirs = (process.env.PATH || "").split(path.delimiter);
+  for (const app of commonApps) {
+    for (const dir of pathDirs) {
+      const fullPath = path.join(dir, app.path);
+      if (fs.existsSync(fullPath)) {
+        found.push({ ...app, fullPath });
+        break;
+      }
+    }
+  }
+  return found;
+});
+
+// --- Screenshot ---
+ipcMain.handle("desktop:screenshot", async () => {
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.size;
+
+    const sources = await desktopCapturer.getSources({
+      types: ["screen"],
+      thumbnailSize: { width, height },
+    });
+
+    if (sources.length > 0) {
+      const thumbnail = sources[0].thumbnail;
+      if (!thumbnail.isEmpty()) {
+        return { success: true, data: thumbnail.toDataURL(), width, height };
+      }
+    }
+    return { success: false, error: "Failed to capture screen" };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// --- Execute Command (sandboxed) ---
+ipcMain.handle("desktop:execCommand", async (_, command) => {
+  const allowedCommands = [
+    "ipconfig", "ipconfig /all",
+    "systeminfo", "hostname",
+    "tasklist", "tasklist /fi",
+    "wmic os get caption", "wmic cpu get name",
+    "dir", "tree",
+    "netstat", "netstat -an",
+    "ping",
+  ];
+
+  const cmdLower = command.toLowerCase().trim();
+  const isAllowed = allowedCommands.some((c) => cmdLower.startsWith(c.toLowerCase()));
+
+  if (!isAllowed) {
+    return { success: false, error: `Command not allowed: "${command}". FRIDAY only supports safe read-only commands.` };
+  }
+
+  try {
+    const output = execSync(command, { encoding: "utf8", timeout: 10000, stdio: "pipe", maxBuffer: 1024 * 512 });
+    return { success: true, output: output.slice(0, 5000) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 app.whenReady().then(createWindow);
