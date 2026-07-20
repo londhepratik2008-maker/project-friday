@@ -417,25 +417,21 @@ ipcMain.handle("clipboard:readImage", async () => {
   return { data: img.toDataURL() };
 });
 
-// --- Volume ---
+// --- Volume (uses Windows Core Audio API via PowerShell) ---
+const audioScript = path.join(__dirname, "scripts", "audio.ps1");
+
 ipcMain.handle("system:getVolume", async () => {
   try {
-    const output = execSync('powershell -Command "(Get-AudioDevice -PlaybackVolume)"', { encoding: "utf8", timeout: 5000, stdio: "pipe" });
-    const vol = parseInt(output.trim());
-    return { volume: isNaN(vol) ? 0 : vol, muted: false };
+    const output = execSync(`powershell -ExecutionPolicy Bypass -File "${audioScript}" get`, { encoding: "utf8", timeout: 10000, stdio: "pipe" });
+    return JSON.parse(output.trim());
   } catch {
-    try {
-      const output = execSync('powershell -Command "$wsh = New-Object -ComObject WScript.Shell; $wsh.SendKeys([char]173)" 2>$null; (Get-AudioDevice -PlaybackVolume) 2>$null"', { encoding: "utf8", timeout: 5000, stdio: "pipe" });
-      return { volume: parseInt(output.trim()) || 0, muted: false };
-    } catch {
-      return { volume: 0, muted: false };
-    }
+    return { volume: 0, muted: false };
   }
 });
 
 ipcMain.handle("system:setVolume", async (_, level) => {
   try {
-    execSync(`powershell -Command "Set-AudioDevice -PlaybackVolume ${Math.max(0, Math.min(100, level))}"`, { encoding: "utf8", timeout: 5000, stdio: "pipe" });
+    execSync(`powershell -ExecutionPolicy Bypass -File "${audioScript}" set ${Math.max(0, Math.min(100, level))}`, { encoding: "utf8", timeout: 10000, stdio: "pipe" });
     return { success: true, volume: level };
   } catch {
     return { success: false, volume: 0 };
@@ -444,18 +440,19 @@ ipcMain.handle("system:setVolume", async (_, level) => {
 
 ipcMain.handle("system:toggleMute", async () => {
   try {
-    execSync('powershell -Command "Set-AudioDevice -PlaybackMute (-not (Get-AudioDevice -PlaybackMute))"', { encoding: "utf8", timeout: 5000, stdio: "pipe" });
-    return { success: true };
+    const output = execSync(`powershell -ExecutionPolicy Bypass -File "${audioScript}" toggle`, { encoding: "utf8", timeout: 10000, stdio: "pipe" });
+    return JSON.parse(output.trim());
   } catch {
     return { success: false };
   }
 });
 
-// --- Brightness ---
+// --- Brightness (laptops only — gracefully fails on desktops) ---
 ipcMain.handle("system:getBrightness", async () => {
   try {
     const output = execSync('powershell -Command "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods).WmiGetBrightness()"', { encoding: "utf8", timeout: 5000, stdio: "pipe" });
-    return { brightness: parseInt(output.trim()) || 0, supported: true };
+    const val = parseInt(output.trim());
+    return { brightness: isNaN(val) ? 0 : val, supported: true };
   } catch {
     return { brightness: 0, supported: false };
   }
@@ -466,7 +463,7 @@ ipcMain.handle("system:setBrightness", async (_, level) => {
     execSync(`powershell -Command "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, ${Math.max(0, Math.min(100, level))})"`, { encoding: "utf8", timeout: 5000, stdio: "pipe" });
     return { success: true, brightness: level };
   } catch {
-    return { success: false };
+    return { success: false, supported: false };
   }
 });
 
