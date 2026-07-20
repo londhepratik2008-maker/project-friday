@@ -76,50 +76,92 @@ Built as a standalone `.exe` that runs on any Windows machine with zero setup. D
 
 ## Installation
 
+### Prerequisites
+- **Windows 10/11** (64-bit)
+- **Node.js 18+** (only if building from source; not needed for the `.exe`)
+
+---
+
 ### Option 1: Download the `.exe` (Recommended)
 
-1. Download `FRIDAY.exe` from [Releases](https://github.com/londhepratik2008-maker/project-friday/releases)
-2. Run `FRIDAY.exe` — no installation required
-3. Configure your API keys in `electron/data/api-config.json`
+1. **Download** `FRIDAY.exe` from the [v1.0.0 release](https://github.com/londhepratik2008-maker/project-friday/releases/tag/v1.0.0)
+
+2. **Create the config folder** — FRIDAY expects API keys at a specific path. Create this folder structure next to the exe:
+   ```
+   FRIDAY/
+   ├── FRIDAY.exe
+   └── resources/
+       └── app/
+           └── electron/
+               └── data/
+                   └── api-config.json
+   ```
+
+3. **Create `api-config.json`** with your API keys:
+   ```json
+   {
+     "nvidia": {
+       "key": "nvapi-YOUR_NVIDIA_KEY",
+       "model": "nvidia/llama-3.3-nemotron-super-49b-v1"
+     },
+     "openrouter": {
+       "key": "sk-or-v1-YOUR_OPENROUTER_KEY",
+       "visionModel": "nvidia/nemotron-nano-12b-v2-vl:free",
+       "textModel": "openrouter/free"
+     }
+   }
+   ```
+
+4. **Get API keys:**
+   - **NVIDIA NIM** (free): https://build.nvidia.com — sign up, get a `nvapi-` key
+   - **OpenRouter** (free tier): https://openrouter.ai — sign up, get a `sk-or-v1-` key
+
+5. **Double-click `FRIDAY.exe`** — done
+
+---
 
 ### Option 2: Build from Source
 
-```bash
-# Clone the repository
-git clone https://github.com/londhepratik2008-maker/project-friday.git
-cd project-friday/apps/desktop
+1. **Install Node.js** from https://nodejs.org (LTS version)
 
-# Install dependencies
-npm install
+2. **Clone the repo:**
+   ```bash
+   git clone https://github.com/londhepratik2008-maker/project-friday.git
+   cd project-friday/apps/desktop
+   ```
 
-# Create API config
-# Copy the template and add your keys
-cp electron/data/api-config.example.json electron/data/api-config.json
+3. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-# Run in dev mode (Vite + Electron)
-npm run desktop
+4. **Create the config file:**
+   ```bash
+   mkdir -p electron/data
+   ```
+   Then create `electron/data/api-config.json` with the JSON from Option 1 above.
 
-# Build for production
-npm run dist
-```
+5. **Run in dev mode:**
+   ```bash
+   npm run desktop
+   ```
 
-### API Configuration
+6. **Or build the exe:**
+   ```bash
+   npm run dist
+   ```
+   The exe will be in the `release/` folder.
 
-Create `apps/desktop/electron/data/api-config.json`:
+---
 
-```json
-{
-  "nvidia": {
-    "key": "nvapi-YOUR_KEY_HERE",
-    "model": "nvidia/llama-3.3-nemotron-super-49b-v1"
-  },
-  "openrouter": {
-    "key": "sk-or-v1-YOUR_KEY_HERE",
-    "visionModel": "nvidia/nemotron-nano-12b-v2-vl:free",
-    "textModel": "openrouter/free"
-  }
-}
-```
+### Troubleshooting
+
+| Issue | Fix |
+|---|---|
+| "Cannot find module" error | Make sure `electron/data/api-config.json` exists |
+| Chat returns error | Check your API keys are valid and not expired |
+| Vision/image analysis fails | Make sure your OpenRouter key is active (free tier has limits) |
+| Blank screen | Run `npm run dev` instead to see error messages |
 
 > **Note:** API keys are loaded from a gitignored config file and never committed to the repository.
 
